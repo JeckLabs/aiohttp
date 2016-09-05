@@ -8,6 +8,7 @@ import sys
 import traceback
 import urllib.parse
 import warnings
+from http.cookiejar import Cookie
 
 from multidict import CIMultiDict, MultiDict, MultiDictProxy, istr
 
@@ -54,11 +55,32 @@ class ClientSession:
             self._source_traceback = traceback.extract_stack(sys._getframe(1))
 
         if cookie_jar is None:
-            cookie_jar = CookieJar(loop=loop)
+            cookie_jar = CookieJar()
         self._cookie_jar = cookie_jar
 
         if cookies is not None:
-            self._cookie_jar.update_cookies(cookies)
+            for name in cookies:
+                cookie = Cookie(
+                    version=0,
+                    name=name,
+                    value=cookies[name],
+                    port=None,
+                    port_specified=False,
+                    domain='',
+                    domain_specified=False,
+                    domain_initial_dot=False,
+                    path='/',
+                    path_specified=True,
+                    secure=False,
+                    expires=None,
+                    discard=True,
+                    comment=None,
+                    comment_url=None,
+                    rest={'HttpOnly': None},
+                    rfc2109=False
+                )
+                self._cookie_jar.set_cookie(cookie)
+
         self._connector = connector
         self._default_auth = auth
         self._version = version
@@ -181,7 +203,9 @@ class ClientSession:
 
         while True:
 
-            cookies = self._cookie_jar.filter_cookies(url)
+            cookies = {}
+            cookies_headers = self._cookie_jar.get_cookies_header(url)
+            headers.update(cookies_headers)
 
             req = self._request_class(
                 method, url, params=params, headers=headers,
@@ -208,7 +232,7 @@ class ClientSession:
             except OSError as exc:
                 raise aiohttp.ClientOSError(*exc.args) from exc
 
-            self._cookie_jar.update_cookies(resp.cookies, resp.url)
+            self._cookie_jar.update_cookies(resp.url, resp.headers)
 
             # redirects
             if resp.status in (301, 302, 303, 307) and allow_redirects:
@@ -467,7 +491,12 @@ class ClientSession:
     @property
     def cookies(self):
         """The session cookies."""
-        return self._cookie_jar.cookies
+        cookies = {}
+
+        for cookie in self._cookie_jar:
+            cookies[cookie.name] = cookie.value
+
+        return cookies
 
     @property
     def version(self):

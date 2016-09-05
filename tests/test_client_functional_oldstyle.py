@@ -732,6 +732,8 @@ class TestHttpClientFunctional(unittest.TestCase):
                 session.request('get', httpd.url('method', 'get')))
             self.assertEqual(r.status, 200)
             content = self.loop.run_until_complete(r.json())
+            print('Headers!!!1111')
+            print(content['headers']['Cookie'])
             self.assertEqual(
                 content['headers']['Cookie'], 'c1=cookie1; c2=cookie2')
             r.close()
