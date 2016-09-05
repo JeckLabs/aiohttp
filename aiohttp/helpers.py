@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import binascii
+import calendar
 import datetime
 import functools
 import http.cookiejar
@@ -10,8 +11,11 @@ import io
 import os
 import re
 import sys
+import time
 import warnings
 from collections import namedtuple
+from http.cookiejar import Cookie
+from http.cookies import Morsel
 from pathlib import Path
 from urllib.parse import quote, urlencode, urlparse
 
@@ -579,10 +583,24 @@ class CookieJar(http.cookiejar.CookieJar):
 
     def get_cookies_header(self, url, headers={}):
         request = self._get_request(url)
+        print('Request url ', url)
         self.add_cookie_header(request)
+        print('Cookie headers ', request.new)
+        print('Cookie jar ', self._cookies)
         return request.new
 
-    def update_cookies(self, url, headers):
+    def update_cookies_from_dict(self, cookies):
+        for name in cookies:
+            if isinstance(name, tuple):
+                name, value = name
+            else:
+                value = cookies[name]
+            if isinstance(value, Morsel):
+                self.set_cookie(morsel_to_cookie(value))
+            else:
+                self.set_cookie(create_cookie(name, value))
+
+    def update_cookies_from_headers(self, url, headers):
         request = self._get_request(url)
         response = self._get_response(headers)
         self.extract_cookies(response, request)
@@ -618,6 +636,72 @@ class CookieJar(http.cookiejar.CookieJar):
         d['add_unredirected_header'] = lambda k, v: d.new.update({k: v})
         d = type('Request', (object,), d)
         return d
+
+
+def create_cookie(name, value, **kwargs):
+    """Make a cookie from underspecified parameters.
+
+    By default, the pair of `name` and `value` will be set for the domain ''
+    and sent on every request (this is sometimes called a "supercookie").
+    """
+    result = dict(
+        version=0,
+        name=name,
+        value=value,
+        port=None,
+        domain='',
+        path='/',
+        secure=False,
+        expires=None,
+        discard=True,
+        comment=None,
+        comment_url=None,
+        rest={'HttpOnly': None},
+        rfc2109=False,)
+
+    badargs = set(kwargs) - set(result)
+    if badargs:
+        err = 'create_cookie() got unexpected keyword arguments: %s'
+        raise TypeError(err % list(badargs))
+
+    result.update(kwargs)
+    result['port_specified'] = bool(result['port'])
+    result['domain_specified'] = bool(result['domain'])
+    result['domain_initial_dot'] = result['domain'].startswith('.')
+    result['path_specified'] = bool(result['path'])
+
+    return Cookie(**result)
+
+
+def morsel_to_cookie(morsel):
+    """Convert a Morsel object into a Cookie containing the one k/v pair."""
+
+    expires = None
+    if morsel['max-age']:
+        try:
+            expires = int(time.time() + int(morsel['max-age']))
+        except ValueError:
+            raise TypeError('max-age: %s must be integer' % morsel['max-age'])
+    elif morsel['expires']:
+        time_template = '%a, %d-%b-%Y %H:%M:%S GMT'
+        expires = calendar.timegm(
+            time.strptime(morsel['expires'], time_template)
+        )
+    return create_cookie(
+        comment=morsel['comment'],
+        comment_url=bool(morsel['comment']),
+        discard=False,
+        domain=morsel['domain'],
+        expires=expires,
+        name=morsel.key,
+        path=morsel['path'],
+        port=None,
+        rest={'HttpOnly': morsel['httponly']},
+        rfc2109=False,
+        secure=bool(morsel['secure']),
+        value=morsel.value,
+        version=morsel['version'] or 0,
+    )
 
 
 def _get_kwarg(kwargs, old, new, value):

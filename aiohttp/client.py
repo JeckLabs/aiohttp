@@ -8,7 +8,6 @@ import sys
 import traceback
 import urllib.parse
 import warnings
-from http.cookiejar import Cookie
 
 from multidict import CIMultiDict, MultiDict, MultiDictProxy, istr
 
@@ -59,27 +58,7 @@ class ClientSession:
         self._cookie_jar = cookie_jar
 
         if cookies is not None:
-            for name in cookies:
-                cookie = Cookie(
-                    version=0,
-                    name=name,
-                    value=cookies[name],
-                    port=None,
-                    port_specified=False,
-                    domain='',
-                    domain_specified=False,
-                    domain_initial_dot=False,
-                    path='/',
-                    path_specified=True,
-                    secure=False,
-                    expires=None,
-                    discard=True,
-                    comment=None,
-                    comment_url=None,
-                    rest={'HttpOnly': None},
-                    rfc2109=False
-                )
-                self._cookie_jar.set_cookie(cookie)
+            self._cookie_jar.update_cookies_from_dict(cookies)
 
         self._connector = connector
         self._default_auth = auth
@@ -232,7 +211,8 @@ class ClientSession:
             except OSError as exc:
                 raise aiohttp.ClientOSError(*exc.args) from exc
 
-            self._cookie_jar.update_cookies(resp.url, resp.headers)
+            self._cookie_jar.update_cookies_from_headers(resp.url,
+                                                         resp.headers)
 
             # redirects
             if resp.status in (301, 302, 303, 307) and allow_redirects:
@@ -494,7 +474,7 @@ class ClientSession:
         cookies = {}
 
         for cookie in self._cookie_jar:
-            cookies[cookie.name] = cookie.value
+            cookies[cookie.name] = cookie
 
         return cookies
 
