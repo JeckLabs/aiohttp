@@ -583,10 +583,7 @@ class CookieJar(http.cookiejar.CookieJar):
 
     def get_cookies_header(self, url, headers={}):
         request = self._get_request(url)
-        print('Request url ', url)
         self.add_cookie_header(request)
-        print('Cookie headers ', request.new)
-        print('Cookie jar ', self._cookies)
         return request.new
 
     def update_cookies_from_dict(self, cookies):
